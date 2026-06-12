@@ -1,5 +1,6 @@
 import io
 import logging
+from pathlib import Path
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.http import MediaFileUpload, MediaIoBaseDownload
@@ -18,87 +19,79 @@ def _get_drive_client():
 
 
 def download_state_from_drive() -> bool:
-    """
-    Queries your secure Google Drive shared folder for a stored 'auth.json' file.
-    If located, downloads and overwrites the local tracking cache path.
-    """
+    """Queries your secure Google Drive folder to download both auth.json and config.json."""
     if not settings.GOOGLE_DRIVE_FOLDER_ID:
         logger.warning("Google Drive Synchronization skipped: GOOGLE_DRIVE_FOLDER_ID not set.")
         return False
 
-    try:
-        drive = _get_drive_client()
-        query = f"'{settings.GOOGLE_DRIVE_FOLDER_ID}' in parents and name='auth.json' and trashed=false"
-        
-        response = drive.files().list(q=query, fields="files(id, name)").execute()
-        files = response.get("files", [])
-
-        if not files:
-            logger.warning("No existing 'auth.json' file found in Google Drive folder container. Initial download skipped.")
-            return False
-
-        file_id = files[0]["id"]
-        logger.info(f"Downloading state file from Google Drive (File ID: {file_id})...")
-        
-        request = drive.files().get_media(fileId=file_id)
-        fh = io.BytesIO()
-        downloader = MediaIoBaseDownload(fh, request)
-        
-        done = False
-        while not done:
-            status, done = downloader.next_chunk()
+    success = True
+    for filename, local_path in [("auth.json", settings.STORAGE_STATE_PATH), ("config.json", settings.CONFIG_STATE_PATH)]:
+        try:
+            drive = _get_drive_client()
+            query = f"'{settings.GOOGLE_DRIVE_FOLDER_ID}' in parents and name='{filename}' and trashed=false"
             
-        # Ensure local folder context structures exist before writing disk blocks
-        settings.STORAGE_STATE_PATH.parent.mkdir(parents=True, exist_ok=True)
-        with open(settings.STORAGE_STATE_PATH, "wb") as f:
-            f.write(fh.getvalue())
-            
-        logger.info(f"Successfully synchronized cloud state cache to: {settings.STORAGE_STATE_PATH}")
-        return True
+            response = drive.files().list(q=query, fields="files(id, name)").execute()
+            files = response.get("files", [])
 
-    except Exception as e:
-        logger.error(f"Error downloading session cookie array from Google Drive: {str(e)}")
-        return False
+            if not files:
+                logger.warning(f"No existing '{filename}' file found in Google Drive. Sync skipped for this asset.")
+                continue
+
+            file_id = files[0]["id"]
+            logger.info(f"Downloading {filename} from Google Drive (File ID: {file_id})...")
+            
+            request = drive.files().get_media(fileId=file_id)
+            fh = io.BytesIO()
+            downloader = MediaIoBaseDownload(fh, request)
+            
+            done = False
+            while not done:
+                status, done = downloader.next_chunk()
+                
+            local_path.parent.mkdir(parents=True, exist_ok=True)
+            with open(local_path, "wb") as f:
+                f.write(fh.getvalue())
+                
+            logger.info(f"Successfully synchronized cloud state cache to: {local_path}")
+        except Exception as e:
+            logger.error(f"Error downloading {filename} from Google Drive: {str(e)}")
+            success = False
+            
+    return success
 
 
 def upload_state_to_drive() -> bool:
-    """
-    Saves the locally updated 'auth.json' tracking configuration array up to the cloud.
-    Performs an in-place update if the file already exists, or constructs a fresh one if missing.
-    """
+    """Saves locally updated auth.json and config.json configurations back up to Google Drive."""
     if not settings.GOOGLE_DRIVE_FOLDER_ID:
         return False
 
-    if not settings.STORAGE_STATE_PATH.exists() or settings.STORAGE_STATE_PATH.stat().st_size == 0:
-        logger.error("Upload aborted: Local state tracking file is missing or contains empty definitions.")
-        return False
+    success = True
+    for filename, local_path in [("auth.json", settings.STORAGE_STATE_PATH), ("config.json", settings.CONFIG_STATE_PATH)]:
+        if not local_path.exists() or local_path.stat().st_size == 0:
+            continue
 
-    try:
-        drive = _get_drive_client()
-        query = f"'{settings.GOOGLE_DRIVE_FOLDER_ID}' in parents and name='auth.json' and trashed=false"
-        
-        response = drive.files().list(q=query, fields="files(id, name)").execute()
-        files = response.get("files", [])
+        try:
+            drive = _get_drive_client()
+            query = f"'{settings.GOOGLE_DRIVE_FOLDER_ID}' in parents and name='{filename}' and trashed=false"
+            
+            response = drive.files().list(q=query, fields="files(id, name)").execute()
+            files = response.get("files", [])
 
-        media = MediaFileUpload(str(settings.STORAGE_STATE_PATH), mimetype="application/json", resumable=True)
+            media = MediaFileUpload(str(local_path), mimetype="application/json", resumable=True)
 
-        if files:
-            # Overwrite the existing cloud file entry
-            file_id = files[0]["id"]
-            logger.info(f"Updating existing cloud state file entries in Google Drive (ID: {file_id})...")
-            drive.files().update(fileId=file_id, media_body=media).execute()
-        else:
-            # Create a completely fresh cloud file entry inside your target folder
-            logger.info("Writing fresh session authentication parameters to Google Drive storage...")
-            file_metadata = {
-                "name": "auth.json",
-                "parents": [settings.GOOGLE_DRIVE_FOLDER_ID]
-            }
-            drive.files().create(body=file_metadata, media_body=media, fields="id").execute()
-
-        logger.info("Cloud synchronization file uploads completed successfully.")
-        return True
-
-    except Exception as e:
-        logger.error(f"Error uploading cookie definitions to Google Drive: {str(e)}")
-        return False
+            if files:
+                file_id = files[0]["id"]
+                logger.info(f"Updating existing cloud '{filename}' entries in Google Drive (ID: {file_id})...")
+                drive.files().update(fileId=file_id, media_body=media).execute()
+            else:
+                logger.info(f"Writing fresh '{filename}' parameters to Google Drive storage...")
+                file_metadata = {
+                    "name": filename,
+                    "parents": [settings.GOOGLE_DRIVE_FOLDER_ID]
+                }
+                drive.files().create(body=file_metadata, media_body=media, fields="id").execute()
+        except Exception as e:
+            logger.error(f"Error uploading {filename} to Google Drive: {str(e)}")
+            success = False
+            
+    return success

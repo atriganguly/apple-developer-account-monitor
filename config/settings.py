@@ -11,9 +11,9 @@ load_dotenv(dotenv_path=BASE_DIR / ".env")
 
 def _parse_bool(val: str) -> bool:
     """Helper to convert environment variable strings safely to boolean values."""
-    if isinstance(val, bool):
-        return val
-    return str(val).lower() in ("true", "1", "yes", "on")
+    if isinstance(val, bool) or str(val).lower() in ("true", "1", "yes", "on"):
+        return True
+    return False
 
 @dataclass(frozen=True)
 class AutomationSettings:
@@ -34,6 +34,9 @@ class AutomationSettings:
     STORAGE_STATE_PATH: Path = field(
         default_factory=lambda: Path(os.getenv("APPLE_STORAGE_STATE_PATH", BASE_DIR / "session" / "auth.json"))
     )
+    CONFIG_STATE_PATH: Path = field(
+        default_factory=lambda: Path(BASE_DIR / "session" / "config.json")
+    )
     
     # Apple Developer Portal Targets
     APPLE_PORTAL_URL: str = "https://developer.apple.com/account"
@@ -49,7 +52,7 @@ class AutomationSettings:
         default_factory=lambda: os.getenv("GOOGLE_SHEET_RANGE", "'Apple Developer Account Monitor'!A2")
     )
     
-    # Google Drive Persistence Configuration (Phase 1 Expansion)
+    # Google Drive Persistence Configuration
     GOOGLE_DRIVE_FOLDER_ID: str = field(
         default_factory=lambda: os.getenv("GOOGLE_DRIVE_FOLDER_ID", "")
     )
@@ -61,10 +64,6 @@ class AutomationSettings:
     APPLE_PASSWORD: str = field(
         default_factory=lambda: os.getenv("APPLE_PASSWORD", "")
     )
-    
-    # Execution Windows (Interval metadata trackers for runtime checks)
-    KEEP_ALIVE_DAYS: int = 5
-    SCRAPE_INTERVAL_DAYS: int = 30
 
 # Initialize a single immutable instance to be imported across all components
 settings = AutomationSettings()
