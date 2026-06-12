@@ -15,7 +15,7 @@ When generating, modifying, refactoring, or patch-updating code for this reposit
     * Return Code `4` for domain runtime execution skips.
 * **Trigger Isolation:** Do not introduce code architectures that block background thread execution. Every file processing step must support clean, non-interactive headless cloud container environments.
 
-## 3. Deployment & Namespace Integrity
+## 3. Deployment Protocol & Namespace Integrity
 Python components must use explicit exception blocks and clean imports to prevent namespace contamination.
 * Do not introduce hardcoded credentials or key paths.
 * All environment variable reads must go through `config/settings.py`.
