@@ -1,0 +1,102 @@
+name: Apple Developer Account Monitor Engine
+
+on:
+  schedule:
+    - cron: '0 6 */3 * *'  # Trigger Type A: Runs automatically every 3 days at 06:00 UTC for cookie renewal
+    - cron: '0 0 1 * *'    # Trigger Type B: Runs automatically on the 1st of every month at 00:00 UTC for full data scrape
+  workflow_dispatch:      # Trigger Type C: Connects directly to our Phase 4 Frontend Dashboard for manual runs
+    inputs:
+      mode:
+        description: 'Execution Mode Profile'
+        required: true
+        default: 'scrape'
+        type: choice
+        options:
+          - scrape
+          - keep-alive
+      dev_mode:
+        description: 'Enable Development Mode (Throttles tracking to first 5 teams)'
+        required: true
+        default: 'false'
+        type: choice
+        options:
+          - 'false'
+          - 'true'
+
+jobs:
+  automation-runner:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      # 1. Check out the project repository files wholesale onto the clean cloud runner machine
+      - name: Checkout Codebase
+        uses: actions/checkout@v4
+
+      # 2. Initialize a secure, isolated Python environment runtime context
+      - name: Setup Python Runtime Environment
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      # 3. Download dependencies compiled inside our requirements definitions
+      - name: Install Application Package Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      # 4. Install Playwright core binaries and specific headless Chromium browser dependencies
+      - name: Provision Playwright Headless Browser Engines
+        run: playwright install chromium --with-deps
+
+      # 5. Extract our Google Service Account credentials directly out of GitHub Secrets and generate the tracking file
+      - name: De-serialize Google Service Account Credentials
+        run: echo '${{ secrets.GOOGLE_CREDS_JSON }}' > creds.json
+
+      # 6. Reconstruct a functional environment profile configuration mapping runtime secrets into active engine contexts
+      - name: Reconstruct System Environment Configuration Matrix
+        run: |
+          echo "APPLE_EMAIL=${{ secrets.APPLE_EMAIL }}" >> .env
+          echo "APPLE_PASSWORD=${{ secrets.APPLE_PASSWORD }}" >> .env
+          echo "GOOGLE_SHEET_ID=${{ secrets.GOOGLE_SHEET_ID }}" >> .env
+          echo "GOOGLE_DRIVE_FOLDER_ID=${{ secrets.GOOGLE_DRIVE_FOLDER_ID }}" >> .env
+          echo "GOOGLE_SHEET_RANGE='Apple Developer Account Monitor'!A2" >> .env
+          echo "PLAYWRIGHT_HEADLESS=True" >> .env
+
+      # 7. Pull down the latest active sliding cookie state from your personal Google Drive account folder
+      - name: Synchronize Inbound Cloud Storage Session State
+        run: |
+          python -c "from services.drive_sync import download_state_from_drive; download_state_from_drive()"
+
+      # 8. Dynamically resolve runtime arguments (Schedules vs Manual UI Inputs) and execute the engine core
+      - name: Execute Core Automation Processing Loop
+        run: |
+          # Default fallback configurations assigned to manual UI Dashboard events
+          EXEC_MODE="${{ github.event.inputs.mode }}"
+          DEV_MODE_STATUS="${{ github.event.inputs.dev_mode }}"
+          
+          # If the run was triggered automatically by GitHub's scheduling cron system, evaluate which cron fired
+          if [ "${{ github.event_name }}" = "schedule" ]; then
+            DEV_MODE_STATUS="false"
+            if [ "${{ github.event.schedule }}" = "0 6 */3 * *" ]; then
+              EXEC_MODE="keep-alive"
+            else
+              EXEC_MODE="scrape"
+            fi
+          fi
+          
+          # Format execution options parameters safely
+          ARGS="--mode $EXEC_MODE"
+          if [ "$DEV_MODE_STATUS" = "true" ]; then
+            ARGS="$ARGS --dev"
+          fi
+          
+          echo "Launching core script loop with target parameters: python main.py $ARGS"
+          python main.py $ARGS
+
+      # 9. Irrespective of execution success/failure states, push the updated browser session cookies back out to Google Drive
+      - name: Synchronize Outbound Cloud Storage Session State
+        if: always()
+        run: |
+          python -c "from services.drive_sync import upload_state_to_drive; upload_state_to_drive()"

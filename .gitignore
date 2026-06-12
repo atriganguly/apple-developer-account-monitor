@@ -1,0 +1,30 @@
+# Environment configuration file containing raw target credentials
+.env
+
+# Google Service Account private key credentials matrix
+creds.json
+
+# Local Apple Developer Portal session token state cache
+session/auth.json
+auth.json
+
+# Python runtime distribution artifacts and compiled bytecodes
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+env/
+venv/
+.venv/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Local IDE configuration layers
+.idea/
+.vscode/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.swp
